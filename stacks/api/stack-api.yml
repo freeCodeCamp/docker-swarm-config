@@ -1,3 +1,4 @@
+version: "3.8"
 x-port-config: &port-config
   target: 3000
   protocol: tcp
@@ -44,7 +45,6 @@ x-deploy-config: &deploy-config
     timeout: 10s
     retries: 3
     start_period: 40s
-    start_interval: 5s
   environment:
     # -- Runtime
     - NODE_ENV=${NODE_ENV:-production}
@@ -88,6 +88,8 @@ x-deploy-config: &deploy-config
 services:
   svc-api-alpha:
     image: ${DOCKER_REGISTRY}/${DEPLOYMENT_ENV}/learn-api:${DEPLOYMENT_VERSION}
+    depends_on:
+      - validate
     ports:
       - published: 2345
         <<: *port-config
@@ -95,7 +97,53 @@ services:
 
   svc-api-bravo:
     image: ${DOCKER_REGISTRY}/${DEPLOYMENT_ENV}/learn-api:${DEPLOYMENT_VERSION}
+    depends_on:
+      - validate
     ports:
       - published: 2346
         <<: *port-config
     <<: *deploy-config
+
+  validate:
+    image: busybox
+    command: "true"
+    healthcheck:
+      test: [
+          "CMD-SHELL",
+          '
+          echo "Validating: Checking required environment variables..."
+          missing_vars=""
+
+          for var in \
+          "MONGOHQ_URL" \
+          "AUTH0_CLIENT_ID" \
+          "AUTH0_CLIENT_SECRET" \
+          "AUTH0_DOMAIN" \
+          "JWT_SECRET" \
+          "COOKIE_SECRET" \
+          "SES_ID" \
+          "SES_SECRET" \
+          "GROWTHBOOK_FASTIFY_API_HOST" \
+          "GROWTHBOOK_FASTIFY_CLIENT_KEY" \
+          "STRIPE_SECRET_KEY" \
+          "DOCKER_REGISTRY" \
+          "DEPLOYMENT_ENV" \
+          "DEPLOYMENT_VERSION"
+          do
+          if [ -z "${!var}" ]; then
+          missing_vars="$missing_vars\n  - $var"
+          fi
+          done
+
+          if [ ! -z "$missing_vars" ]; then
+          echo "❌ Validation failed: The following required environment variables are not set:$missing_vars"
+          exit 1
+          fi
+
+          echo "✅ Validation passed: All required environment variables are set"
+          ',
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 0
+      start_period: 0s
