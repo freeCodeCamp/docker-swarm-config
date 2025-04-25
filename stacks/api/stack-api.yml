@@ -26,14 +26,55 @@ x-deploy-config: &deploy-config
         - node.labels.api.variant == ${DEPLOYMENT_ENV}
       preferences:
         - spread: node.labels.api.variant == ${DEPLOYMENT_ENV}
+  # logging:
+  #   driver: "json-file"
+  #   options:
+  #     max-size: "100m"
+  #     max-file: "5"
+  #     compress: "true"
+  #     labels: "app=api,env=${DEPLOYMENT_ENV}"
   logging:
-    driver: "json-file"
+    driver: loki
     options:
-      max-size: "100m"
-      max-file: "5"
-      compress: "true"
-      # tag: "{{.Name}}/{{.ImageName}}/{{.ID}}"
-      labels: "app=api,env=${DEPLOYMENT_ENV}"
+      loki-url: ${LOKI_URL}
+      loki-external-labels: "service=api,app=learn-api,variant=${DEPLOYMENT_ENV},version=${DEPLOYMENT_VERSION}"
+      loki-batch-size: "400"
+      loki-batch-wait: "1s"
+      loki-retries: "5"
+      loki-timeout: "10s"
+      loki-pipeline-stages: |
+        - json:
+            expressions:
+              level: level
+              msg: msg
+              time: time
+              url: req.URL
+              status: req.STATUS
+              method: req.METHOD
+              hostname: hostname
+              req_id: req.REQ_ID
+              proxy_ip: req.IP
+              client_ip: req.HEADERS.cf-connecting-ip
+              country: req.HEADERS.cf-ipcountry
+              user_agent: req.HEADERS.user-agent
+        - match:
+            selector: '{url=~"/status/ping.*"}'
+            stages:
+              - json:
+                  expressions:
+                    checker: req.QUERY.checker
+              - match:
+                  selector: '{checker="swarm-manager"}'
+                  action: drop
+        - labels:
+            level:
+            req_id:
+            method:
+            url:
+            msg:
+            client_ip:
+            country:
+            user_agent:
   healthcheck:
     test:
       [
